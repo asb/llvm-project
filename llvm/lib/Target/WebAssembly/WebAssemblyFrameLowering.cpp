@@ -80,8 +80,10 @@ WebAssemblyFrameLowering::getLocalForStackObject(MachineFunction &MF,
   // allocation.
   for (EVT ValueVT : ValueVTs) {
     wasm::ValType WVT = WebAssembly::toValType(ValueVT.getSimpleVT());
+    // Retrieve the actual type if we have a 'wasmref' local.
     if (WVT == wasm::ValType::WASMREF)
-      report_fatal_error("Can't allocate local for WASMREF.");
+      WVT = WebAssembly::retrieveValTypeForWasmRef(
+          cast<TargetExtType>(AI->getAllocatedType()));
     FuncInfo->addLocal(WVT);
   }
   // Abuse object size to record number of WebAssembly locals allocated to
