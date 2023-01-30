@@ -24,13 +24,17 @@
 #include "WebAssemblySubtarget.h"
 #include "llvm/CodeGen/MachineBlockFrequencyInfo.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Target/TargetMachine.h"
 using namespace llvm;
 
 #define DEBUG_TYPE "wasm-explicit-locals"
+
+typedef std::pair<unsigned, wasm::ValType> LocalInfo;
 
 namespace {
 class WebAssemblyExplicitLocals final : public MachineFunctionPass {
@@ -45,6 +49,7 @@ class WebAssemblyExplicitLocals final : public MachineFunctionPass {
   }
 
   bool runOnMachineFunction(MachineFunction &MF) override;
+
 
 public:
   static char ID; // Pass identification, replacement for typeid
@@ -74,15 +79,81 @@ static void checkFrameBase(WebAssemblyFunctionInfo &MFI, unsigned Local,
 
 /// Return a local id number for the given register, assigning it a new one
 /// if it doesn't yet have one.
-static unsigned getLocalId(DenseMap<unsigned, unsigned> &Reg2Local,
-                           WebAssemblyFunctionInfo &MFI, unsigned &CurLocal,
+static unsigned getLocalId(DenseMap<unsigned, LocalInfo> &Reg2Local,
+                           WebAssemblyFunctionInfo &MFI, unsigned &CurLocal, wasm::ValType WVT,
                            unsigned Reg) {
-  auto P = Reg2Local.insert(std::make_pair(Reg, CurLocal));
+  auto P = Reg2Local.insert(std::make_pair(Reg, std::make_pair(CurLocal, WVT)));
   if (P.second) {
     checkFrameBase(MFI, CurLocal, Reg);
     ++CurLocal;
   }
-  return P.first->second;
+  return P.first->second.first;
+}
+
+static wasm::ValType getWVTForVReg(MachineFunction &,
+                                   DenseMap<unsigned, LocalInfo> &, Register);
+
+static wasm::ValType
+getWVTForWasmRefDefMI(MachineFunction &MF,
+                      DenseMap<unsigned, LocalInfo> &Reg2Local,
+                      MachineInstr &MI) {
+  switch (MI.getOpcode()) {
+  default:
+    report_fatal_error("Don't know how to determine WVT for this MI");
+  case WebAssembly::LOCAL_TEE_WASMREF:
+  case WebAssembly::TEE_WASMREF: {
+    Register CopiedReg = MI.getOperand(2).getReg();
+    auto RL = Reg2Local.find(CopiedReg);
+    if (RL == Reg2Local.end())
+      return getWVTForVReg(MF, Reg2Local, CopiedReg);
+    return RL->second.second;
+  }
+  case WebAssembly::COPY_WASMREF: {
+    Register CopiedReg = MI.getOperand(1).getReg();
+    auto RL = Reg2Local.find(CopiedReg);
+    if (RL == Reg2Local.end())
+      return getWVTForVReg(MF, Reg2Local, CopiedReg);
+    return RL->second.second;
+  }
+  case WebAssembly::GLOBAL_GET_WASMREF: {
+    const GlobalValue *GV = MI.getOperand(1).getGlobal();
+    return WebAssembly::retrieveValTypeForWasmRef(
+        cast<TargetExtType>(GV->getValueType()));
+  }
+  case WebAssembly::REF_NULL_EXTERNREF:
+    return wasm::ValType::EXTERNREF;
+  case WebAssembly::REF_NULL_FUNCREF:
+    return wasm::ValType::FUNCREF;
+  }
+}
+
+static wasm::ValType getWVTForVReg(MachineFunction &MF,
+                                   DenseMap<unsigned, LocalInfo> &Reg2Local,
+                                   Register VReg) {
+  // Return previously recorded WVT if we've seen the VReg before.
+  auto RL = Reg2Local.find(VReg);
+  if (RL != Reg2Local.end())
+    return RL->second.second;
+
+  MachineRegisterInfo &MRI = MF.getRegInfo();
+  wasm::ValType WVT = WebAssembly::regClassToValType(MRI.getRegClass(VReg));
+  if (WVT != wasm::ValType::WASMREF)
+    return WVT;
+
+  // Determine the actual type for a WASMREF.
+  if (MRI.def_empty(VReg))
+    report_fatal_error("VReg unexpectedly has no defs");
+
+  MachineRegisterInfo::def_instr_iterator I = MRI.def_instr_begin(VReg);
+  WVT = getWVTForWasmRefDefMI(MF, Reg2Local, *I);
+  // Check that any other uses have the same type.
+  ++I;
+  for (auto E = MRI.def_instr_end(); I != E; ++I) {
+    if (WVT != getWVTForWasmRefDefMI(MF, Reg2Local, *I))
+      report_fatal_error("WasmRef has defs with different type");
+  }
+
+  return WVT;
 }
 
 /// Get the appropriate drop opcode for the given register class.
@@ -188,10 +259,13 @@ bool WebAssemblyExplicitLocals::runOnMachineFunction(MachineFunction &MF) {
   bool Changed = false;
   MachineRegisterInfo &MRI = MF.getRegInfo();
   WebAssemblyFunctionInfo &MFI = *MF.getInfo<WebAssemblyFunctionInfo>();
+  const Function &F = MF.getFunction();
+  const TargetMachine &TM = MF.getTarget();
+  auto Sig = signatureFromFunctionType(*F.getParent(), F.getFunctionType(), &F, F, TM);
   const auto *TII = MF.getSubtarget<WebAssemblySubtarget>().getInstrInfo();
 
   // Map non-stackified virtual registers to their local ids.
-  DenseMap<unsigned, unsigned> Reg2Local;
+  DenseMap<unsigned, LocalInfo> Reg2Local;
 
   // Handle ARGUMENTS first to ensure that they get the designated numbers.
   for (MachineBasicBlock::iterator I = MF.begin()->begin(),
@@ -203,7 +277,7 @@ bool WebAssemblyExplicitLocals::runOnMachineFunction(MachineFunction &MF) {
     Register Reg = MI.getOperand(0).getReg();
     assert(!MFI.isVRegStackified(Reg));
     auto Local = static_cast<unsigned>(MI.getOperand(1).getImm());
-    Reg2Local[Reg] = Local;
+    Reg2Local[Reg] = std::make_pair(Local, Sig->Params[Local]);
     checkFrameBase(MFI, Local, Reg);
 
     // Update debug value to point to the local before removing.
@@ -249,7 +323,9 @@ bool WebAssemblyExplicitLocals::runOnMachineFunction(MachineFunction &MF) {
 
         // Stackify the input if it isn't stackified yet.
         if (!MFI.isVRegStackified(OldReg)) {
-          unsigned LocalId = getLocalId(Reg2Local, MFI, CurLocal, OldReg);
+          unsigned LocalId =
+              getLocalId(Reg2Local, MFI, CurLocal,
+                         getWVTForVReg(MF, Reg2Local, OldReg), OldReg);
           Register NewReg = MRI.createVirtualRegister(RC);
           unsigned Opc = getLocalGetOpcode(RC);
           BuildMI(MBB, &MI, MI.getDebugLoc(), TII->get(Opc), NewReg)
@@ -259,8 +335,10 @@ bool WebAssemblyExplicitLocals::runOnMachineFunction(MachineFunction &MF) {
         }
 
         // Replace the TEE with a LOCAL_TEE.
+        Register OldReg2 = MI.getOperand(1).getReg();
         unsigned LocalId =
-            getLocalId(Reg2Local, MFI, CurLocal, MI.getOperand(1).getReg());
+            getLocalId(Reg2Local, MFI, CurLocal,
+                       getWVTForVReg(MF, Reg2Local, OldReg2), OldReg2);
         unsigned Opc = getLocalTeeOpcode(RC);
         BuildMI(MBB, &MI, MI.getDebugLoc(), TII->get(Opc),
                 MI.getOperand(0).getReg())
@@ -291,7 +369,9 @@ bool WebAssemblyExplicitLocals::runOnMachineFunction(MachineFunction &MF) {
             if (MFI.isFrameBaseVirtual() && OldReg == MFI.getFrameBaseVreg())
               MFI.clearFrameBaseVreg();
           } else {
-            unsigned LocalId = getLocalId(Reg2Local, MFI, CurLocal, OldReg);
+            unsigned LocalId =
+                getLocalId(Reg2Local, MFI, CurLocal,
+                           getWVTForVReg(MF, Reg2Local, OldReg), OldReg);
             unsigned Opc = getLocalSetOpcode(RC);
 
             WebAssemblyDebugValueManager(&MI).replaceWithLocal(LocalId);
@@ -327,7 +407,9 @@ bool WebAssemblyExplicitLocals::runOnMachineFunction(MachineFunction &MF) {
         // immediates.
         if (MO.isDef()) {
           assert(MI.isInlineAsm());
-          unsigned LocalId = getLocalId(Reg2Local, MFI, CurLocal, OldReg);
+          unsigned LocalId =
+              getLocalId(Reg2Local, MFI, CurLocal,
+                         getWVTForVReg(MF, Reg2Local, OldReg), OldReg);
           // If this register operand is tied to another operand, we can't
           // change it to an immediate. Untie it first.
           MI.untieRegOperand(MO.getOperandNo());
@@ -345,7 +427,9 @@ bool WebAssemblyExplicitLocals::runOnMachineFunction(MachineFunction &MF) {
         // Our contract with inline asm register operands is to provide local
         // indices as immediates.
         if (MI.isInlineAsm()) {
-          unsigned LocalId = getLocalId(Reg2Local, MFI, CurLocal, OldReg);
+          unsigned LocalId =
+              getLocalId(Reg2Local, MFI, CurLocal,
+                         getWVTForVReg(MF, Reg2Local, OldReg), OldReg);
           // Untie it first if this reg operand is tied to another operand.
           MI.untieRegOperand(MO.getOperandNo());
           MO.ChangeToImmediate(LocalId);
@@ -353,7 +437,9 @@ bool WebAssemblyExplicitLocals::runOnMachineFunction(MachineFunction &MF) {
         }
 
         // Insert a local.get.
-        unsigned LocalId = getLocalId(Reg2Local, MFI, CurLocal, OldReg);
+        unsigned LocalId =
+            getLocalId(Reg2Local, MFI, CurLocal,
+                       getWVTForVReg(MF, Reg2Local, OldReg), OldReg);
         const TargetRegisterClass *RC = MRI.getRegClass(OldReg);
         Register NewReg = MRI.createVirtualRegister(RC);
         unsigned Opc = getLocalGetOpcode(RC);
@@ -386,13 +472,14 @@ bool WebAssemblyExplicitLocals::runOnMachineFunction(MachineFunction &MF) {
   for (unsigned I = 0, E = MRI.getNumVirtRegs(); I < E; ++I) {
     Register Reg = Register::index2VirtReg(I);
     auto RL = Reg2Local.find(Reg);
-    if (RL == Reg2Local.end() || RL->second < MFI.getParams().size())
+    if (RL == Reg2Local.end() || RL->second.first < MFI.getParams().size())
       continue;
 
-    wasm::ValType WVT = WebAssembly::regClassToValType(MRI.getRegClass(Reg));
+    wasm::ValType WVT = RL->second.second;
     if (WVT == wasm::ValType::WASMREF)
-      report_fatal_error("Can't yet allocate WASMREF locals");
-    MFI.setLocal(RL->second - MFI.getParams().size(), WVT);
+      report_fatal_error(
+          "WASMREF WVTs should have been eliminated by this point");
+    MFI.setLocal(RL->second.first - MFI.getParams().size(), WVT);
     Changed = true;
   }
 
