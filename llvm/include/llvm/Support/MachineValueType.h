@@ -287,11 +287,9 @@ namespace llvm {
                                // unspecified type.  The register class
                                // will be determined by the opcode.
 
-      funcref        = 192,    // WebAssembly's funcref type
-      externref      = 193,    // WebAssembly's externref type
-      x86amx         = 194,    // This is an X86 AMX value
-      i64x8          = 195,    // 8 Consecutive GPRs (AArch64)
-      wasmref        = 196,    // A WebAssembly reference type
+      x86amx         = 192,    // This is an X86 AMX value
+      i64x8          = 193,    // 8 Consecutive GPRs (AArch64)
+      wasmref        = 194,    // A WebAssembly reference type
 
       FIRST_VALUETYPE =  1,    // This is always the beginning of the list.
       LAST_VALUETYPE = wasmref,// This always remains at the end of the list.
@@ -1125,8 +1123,6 @@ namespace llvm {
       case v1024f32:  return TypeSize::Fixed(32768);
       case v2048i32:
       case v2048f32:  return TypeSize::Fixed(65536);
-      case funcref:
-      case externref:
       case wasmref:   return TypeSize::Fixed(0); // opaque type
       }
     }

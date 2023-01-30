@@ -232,11 +232,9 @@ def x86mmx    : ValueType<64,   188>;  // X86 MMX value
 def FlagVT    : ValueType<0,    189>;  // Pre-RA sched glue
 def isVoid    : ValueType<0,    190>;  // Produces no value
 def untyped   : ValueType<8,    191>;  // Produces an untyped value
-def funcref   : ValueType<0,    192>;  // WebAssembly's funcref type
-def externref : ValueType<0,    193>;  // WebAssembly's externref type
-def x86amx    : ValueType<8192, 194>;  // X86 AMX value
-def i64x8     : ValueType<512,  195>;  // 8 Consecutive GPRs (AArch64)
-def wasmref   : ValueType<0,    196>;  // A WebAssembly reference type
+def x86amx    : ValueType<8192, 192>;  // X86 AMX value
+def i64x8     : ValueType<512,  193>;  // 8 Consecutive GPRs (AArch64)
+def wasmref   : ValueType<0,    194>;  // A WebAssembly reference type
 
 def token      : ValueType<0, 248>;  // TokenTy
 def MetadataVT : ValueType<0, 249>;  // Metadata
