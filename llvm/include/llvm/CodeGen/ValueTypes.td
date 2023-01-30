@@ -236,6 +236,7 @@ def funcref   : ValueType<0,    192>;  // WebAssembly's funcref type
 def externref : ValueType<0,    193>;  // WebAssembly's externref type
 def x86amx    : ValueType<8192, 194>;  // X86 AMX value
 def i64x8     : ValueType<512,  195>;  // 8 Consecutive GPRs (AArch64)
+def wasmref   : ValueType<0,    196>;  // A WebAssembly reference type
 
 def token      : ValueType<0, 248>;  // TokenTy
 def MetadataVT : ValueType<0, 249>;  // Metadata

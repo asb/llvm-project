@@ -173,6 +173,7 @@ std::string EVT::getEVTString() const {
   case MVT::Untyped:   return "Untyped";
   case MVT::funcref:   return "funcref";
   case MVT::externref: return "externref";
+  case MVT::wasmref:   return "wasmref";
   }
 }
 
