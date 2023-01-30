@@ -70,8 +70,7 @@ WebAssemblyTargetLowering::WebAssemblyTargetLowering(
     addRegisterClass(MVT::v2f64, &WebAssembly::V128RegClass);
   }
   if (Subtarget->hasReferenceTypes()) {
-    addRegisterClass(MVT::externref, &WebAssembly::EXTERNREFRegClass);
-    addRegisterClass(MVT::funcref, &WebAssembly::FUNCREFRegClass);
+    addRegisterClass(MVT::wasmref, &WebAssembly::WASMREFRegClass);
   }
   // Compute derived properties from the register classes.
   computeRegisterProperties(Subtarget->getRegisterInfo());
@@ -92,7 +91,7 @@ WebAssemblyTargetLowering::WebAssemblyTargetLowering(
   if (Subtarget->hasReferenceTypes()) {
     // We need custom load and store lowering for both externref, funcref and
     // Other. The MVT::Other here represents tables of reference types.
-    for (auto T : {MVT::externref, MVT::funcref, MVT::Other}) {
+    for (auto T : {MVT::wasmref, MVT::Other}) {
       setOperationAction(ISD::LOAD, T, Custom);
       setOperationAction(ISD::STORE, T, Custom);
     }
@@ -351,19 +350,11 @@ WebAssemblyTargetLowering::WebAssemblyTargetLowering(
 
 MVT WebAssemblyTargetLowering::getPointerTy(const DataLayout &DL,
                                             uint32_t AS) const {
-  if (AS == WebAssembly::WasmAddressSpace::WASM_ADDRESS_SPACE_EXTERNREF)
-    return MVT::externref;
-  if (AS == WebAssembly::WasmAddressSpace::WASM_ADDRESS_SPACE_FUNCREF)
-    return MVT::funcref;
   return TargetLowering::getPointerTy(DL, AS);
 }
 
 MVT WebAssemblyTargetLowering::getPointerMemTy(const DataLayout &DL,
                                                uint32_t AS) const {
-  if (AS == WebAssembly::WasmAddressSpace::WASM_ADDRESS_SPACE_EXTERNREF)
-    return MVT::externref;
-  if (AS == WebAssembly::WasmAddressSpace::WASM_ADDRESS_SPACE_FUNCREF)
-    return MVT::funcref;
   return TargetLowering::getPointerMemTy(DL, AS);
 }
 
@@ -543,7 +534,9 @@ LowerCallResults(MachineInstr &CallResults, DebugLoc DL, MachineBasicBlock *BB,
     const MachineFunction *MF = BB->getParent();
     const MachineRegisterInfo &MRI = MF->getRegInfo();
     const TargetRegisterClass *TRC = MRI.getRegClass(Reg);
-    IsFuncrefCall = (TRC == &WebAssembly::FUNCREFRegClass);
+    // Assume this is funcref call if we have a wasmref (on the basis that it
+    // would have been rejected earlier if it wasn't a funcref).
+    IsFuncrefCall = (TRC == &WebAssembly::WASMREFRegClass);
     assert(!IsFuncrefCall || Subtarget->hasReferenceTypes());
   }
 
@@ -647,13 +640,13 @@ LowerCallResults(MachineInstr &CallResults, DebugLoc DL, MachineBasicBlock *BB,
     BB->insertAfter(MIB.getInstr()->getIterator(), Const0);
 
     Register RegFuncref =
-        MF.getRegInfo().createVirtualRegister(&WebAssembly::FUNCREFRegClass);
+        MF.getRegInfo().createVirtualRegister(&WebAssembly::WASMREFRegClass);
     MachineInstr *RefNull =
         BuildMI(MF, DL, TII.get(WebAssembly::REF_NULL_FUNCREF), RegFuncref);
     BB->insertAfter(Const0->getIterator(), RefNull);
 
     MachineInstr *TableSet =
-        BuildMI(MF, DL, TII.get(WebAssembly::TABLE_SET_FUNCREF))
+        BuildMI(MF, DL, TII.get(WebAssembly::TABLE_SET_WASMREF))
             .addSym(Table)
             .addReg(RegZero)
             .addReg(RegFuncref);
@@ -1202,7 +1195,14 @@ WebAssemblyTargetLowering::LowerCall(CallLoweringInfo &CLI,
   // Lastly, if this is a call to a funcref we need to add an instruction
   // table.set to the chain and transform the call.
   if (CLI.CB &&
-      WebAssembly::isFuncrefType(CLI.CB->getCalledOperand()->getType())) {
+      WebAssembly::isWasmRefType(CLI.CB->getCalledOperand()->getType())) {
+    Value *CalledOp = CLI.CB->getCalledOperand();
+    wasm::ValType WVT = WebAssembly::retrieveValTypeForWasmRef(
+        cast<TargetExtType>(CalledOp->getType()));
+
+    if (WVT != wasm::ValType::FUNCREF)
+      report_fatal_error("Can't call a reference that isn't a funcref");
+
     // In the absence of function references proposal where a funcref call is
     // lowered to call_ref, using reference types we generate a table.set to set
     // the funcref to a special table used solely for this purpose, followed by
@@ -1218,7 +1218,7 @@ WebAssemblyTargetLowering::LowerCall(CallLoweringInfo &CLI,
     SDValue TableSetOps[] = {Chain, Sym, TableSlot, Callee};
     SDValue TableSet = DAG.getMemIntrinsicNode(
         WebAssemblyISD::TABLE_SET, DL, DAG.getVTList(MVT::Other), TableSetOps,
-        MVT::funcref,
+        MVT::wasmref,
         // Machine Mem Operand args
         MachinePointerInfo(
             WebAssembly::WasmAddressSpace::WASM_ADDRESS_SPACE_FUNCREF),

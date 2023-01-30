@@ -12,10 +12,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "MCTargetDesc/WebAssemblyMCTargetDesc.h"
+#include "Utils/WebAssemblyTypeUtilities.h"
 #include "WebAssembly.h"
 #include "WebAssemblyISelLowering.h"
 #include "WebAssemblyTargetMachine.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
+#include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/SelectionDAGISel.h"
 #include "llvm/CodeGen/WasmEHFuncInfo.h"
 #include "llvm/IR/DiagnosticInfo.h"

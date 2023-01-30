@@ -16,6 +16,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MCTargetDesc/WebAssemblyMCTargetDesc.h"
+#include "Utils/WebAssemblyTypeUtilities.h"
 #include "Utils/WebAssemblyUtilities.h"
 #include "WebAssembly.h"
 #include "WebAssemblyDebugValueManager.h"
@@ -96,10 +97,8 @@ static unsigned getDropOpcode(const TargetRegisterClass *RC) {
     return WebAssembly::DROP_F64;
   if (RC == &WebAssembly::V128RegClass)
     return WebAssembly::DROP_V128;
-  if (RC == &WebAssembly::FUNCREFRegClass)
-    return WebAssembly::DROP_FUNCREF;
-  if (RC == &WebAssembly::EXTERNREFRegClass)
-    return WebAssembly::DROP_EXTERNREF;
+  if (RC == &WebAssembly::WASMREFRegClass)
+    return WebAssembly::DROP_WASMREF;
   llvm_unreachable("Unexpected register class");
 }
 
@@ -115,10 +114,8 @@ static unsigned getLocalGetOpcode(const TargetRegisterClass *RC) {
     return WebAssembly::LOCAL_GET_F64;
   if (RC == &WebAssembly::V128RegClass)
     return WebAssembly::LOCAL_GET_V128;
-  if (RC == &WebAssembly::FUNCREFRegClass)
-    return WebAssembly::LOCAL_GET_FUNCREF;
-  if (RC == &WebAssembly::EXTERNREFRegClass)
-    return WebAssembly::LOCAL_GET_EXTERNREF;
+  if (RC == &WebAssembly::WASMREFRegClass)
+    return WebAssembly::LOCAL_GET_WASMREF;
   llvm_unreachable("Unexpected register class");
 }
 
@@ -134,10 +131,8 @@ static unsigned getLocalSetOpcode(const TargetRegisterClass *RC) {
     return WebAssembly::LOCAL_SET_F64;
   if (RC == &WebAssembly::V128RegClass)
     return WebAssembly::LOCAL_SET_V128;
-  if (RC == &WebAssembly::FUNCREFRegClass)
-    return WebAssembly::LOCAL_SET_FUNCREF;
-  if (RC == &WebAssembly::EXTERNREFRegClass)
-    return WebAssembly::LOCAL_SET_EXTERNREF;
+  if (RC == &WebAssembly::WASMREFRegClass)
+    return WebAssembly::LOCAL_SET_WASMREF;
   llvm_unreachable("Unexpected register class");
 }
 
@@ -153,30 +148,9 @@ static unsigned getLocalTeeOpcode(const TargetRegisterClass *RC) {
     return WebAssembly::LOCAL_TEE_F64;
   if (RC == &WebAssembly::V128RegClass)
     return WebAssembly::LOCAL_TEE_V128;
-  if (RC == &WebAssembly::FUNCREFRegClass)
-    return WebAssembly::LOCAL_TEE_FUNCREF;
-  if (RC == &WebAssembly::EXTERNREFRegClass)
-    return WebAssembly::LOCAL_TEE_EXTERNREF;
+  if (RC == &WebAssembly::WASMREFRegClass)
+    return WebAssembly::LOCAL_TEE_WASMREF;
   llvm_unreachable("Unexpected register class");
-}
-
-/// Get the type associated with the given register class.
-static MVT typeForRegClass(const TargetRegisterClass *RC) {
-  if (RC == &WebAssembly::I32RegClass)
-    return MVT::i32;
-  if (RC == &WebAssembly::I64RegClass)
-    return MVT::i64;
-  if (RC == &WebAssembly::F32RegClass)
-    return MVT::f32;
-  if (RC == &WebAssembly::F64RegClass)
-    return MVT::f64;
-  if (RC == &WebAssembly::V128RegClass)
-    return MVT::v16i8;
-  if (RC == &WebAssembly::FUNCREFRegClass)
-    return MVT::funcref;
-  if (RC == &WebAssembly::EXTERNREFRegClass)
-    return MVT::externref;
-  llvm_unreachable("unrecognized register class");
 }
 
 /// Given a MachineOperand of a stackified vreg, return the instruction at the
@@ -344,6 +318,10 @@ bool WebAssemblyExplicitLocals::runOnMachineFunction(MachineFunction &MF) {
 
         Register OldReg = MO.getReg();
 
+        if (MO.isUndef() &&
+            MRI.getRegClass(OldReg) == &WebAssembly::WASMREFRegClass)
+          report_fatal_error("Can't create local.get for an undef wasmref");
+
         // Inline asm may have a def in the middle of the operands. Our contract
         // with inline asm register operands is to provide local indices as
         // immediates.
@@ -411,8 +389,10 @@ bool WebAssemblyExplicitLocals::runOnMachineFunction(MachineFunction &MF) {
     if (RL == Reg2Local.end() || RL->second < MFI.getParams().size())
       continue;
 
-    MFI.setLocal(RL->second - MFI.getParams().size(),
-                 typeForRegClass(MRI.getRegClass(Reg)));
+    wasm::ValType WVT = WebAssembly::regClassToValType(MRI.getRegClass(Reg));
+    if (WVT == wasm::ValType::WASMREF)
+      report_fatal_error("Can't yet allocate WASMREF locals");
+    MFI.setLocal(RL->second - MFI.getParams().size(), WVT);
     Changed = true;
   }
 

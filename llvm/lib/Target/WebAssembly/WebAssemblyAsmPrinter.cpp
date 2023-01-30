@@ -123,6 +123,8 @@ static char getInvokeSig(wasm::ValType VT) {
     return 'F';
   case wasm::ValType::EXTERNREF:
     return 'X';
+  case wasm::ValType::WASMREF:
+    report_fatal_error("Not handled yet for WASMREF");
   }
   llvm_unreachable("Unhandled wasm::ValType enum");
 }
@@ -328,14 +330,12 @@ void WebAssemblyAsmPrinter::emitDecls(const Module &M) {
     // information for defined functions (which already have function type
     // info emitted alongside their definition), but this is necessary in
     // order to enable the single-pass WebAssemblyAsmTypeCheck to succeed.
-    SmallVector<MVT, 4> Results;
-    SmallVector<MVT, 4> Params;
-    computeSignatureVTs(F.getFunctionType(), &F, F, TM, Params, Results);
     // At this point these MCSymbols may or may not have been created already
     // and thus also contain a signature, but we need to get the signature
     // anyway here in case it is an invoke that has not yet been created. We
     // will discard it later if it turns out not to be necessary.
-    auto Signature = signatureFromMVTs(Results, Params);
+    auto Signature =
+        signatureFromFunctionType(M, F.getFunctionType(), &F, F, TM);
     bool InvokeDetected = false;
     auto *Sym = getMCSymbolForFunction(
         &F, WebAssembly::WasmEnableEmEH || WebAssembly::WasmEnableEmSjLj,
@@ -568,11 +568,9 @@ void WebAssemblyAsmPrinter::emitJumpTableInfo() {
 
 void WebAssemblyAsmPrinter::emitFunctionBodyStart() {
   const Function &F = MF->getFunction();
-  SmallVector<MVT, 1> ResultVTs;
-  SmallVector<MVT, 4> ParamVTs;
-  computeSignatureVTs(F.getFunctionType(), &F, F, TM, ParamVTs, ResultVTs);
 
-  auto Signature = signatureFromMVTs(ResultVTs, ParamVTs);
+  auto Signature =
+      signatureFromFunctionType(*F.getParent(), F.getFunctionType(), &F, F, TM);
   auto *WasmSym = cast<MCSymbolWasm>(CurrentFnSym);
   WasmSym->setSignature(Signature.get());
   addSignature(std::move(Signature));
@@ -588,9 +586,7 @@ void WebAssemblyAsmPrinter::emitFunctionBodyStart() {
         cast<ConstantAsMetadata>(Idx->getOperand(0))->getValue()));
   }
 
-  SmallVector<wasm::ValType, 16> Locals;
-  valTypesFromMVTs(MFI->getLocals(), Locals);
-  getTargetStreamer()->emitLocal(Locals);
+  getTargetStreamer()->emitLocal(MFI->getLocals());
 
   AsmPrinter::emitFunctionBodyStart();
 }

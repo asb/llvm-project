@@ -267,6 +267,7 @@ enum : unsigned {
   WASM_TYPE_EXTERNREF = 0x6F,
   WASM_TYPE_FUNC = 0x60,
   WASM_TYPE_NORESULT = 0x40, // for blocks with no result values
+  WASM_TYPE_WASMREF = 0xff   // Not an actual encoding, needs custom handling.
 };
 
 // Kinds of externals (for imports and exports).
@@ -429,6 +430,7 @@ enum class ValType {
   V128 = WASM_TYPE_V128,
   FUNCREF = WASM_TYPE_FUNCREF,
   EXTERNREF = WASM_TYPE_EXTERNREF,
+  WASMREF = WASM_TYPE_WASMREF,
 };
 
 struct WasmSignature {

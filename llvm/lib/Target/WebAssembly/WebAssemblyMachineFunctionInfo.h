@@ -33,7 +33,7 @@ struct WebAssemblyFunctionInfo;
 class WebAssemblyFunctionInfo final : public MachineFunctionInfo {
   std::vector<MVT> Params;
   std::vector<MVT> Results;
-  std::vector<MVT> Locals;
+  std::vector<wasm::ValType> Locals;
 
   /// A mapping from CodeGen vreg index to WebAssembly register number.
   std::vector<unsigned> WARegs;
@@ -88,10 +88,12 @@ public:
     Results.clear();
   }
 
-  void setNumLocals(size_t NumLocals) { Locals.resize(NumLocals, MVT::i32); }
-  void setLocal(size_t i, MVT VT) { Locals[i] = VT; }
-  void addLocal(MVT VT) { Locals.push_back(VT); }
-  const std::vector<MVT> &getLocals() const { return Locals; }
+  void setNumLocals(size_t NumLocals) {
+    Locals.resize(NumLocals, wasm::ValType::I32);
+  }
+  void setLocal(size_t i, wasm::ValType WVT) { Locals[i] = WVT; }
+  void addLocal(wasm::ValType WVT) { Locals.push_back(WVT); }
+  const std::vector<wasm::ValType> &getLocals() const { return Locals; }
 
   unsigned getVarargBufferVreg() const {
     assert(VarargVreg != -1U && "Vararg vreg hasn't been set");
@@ -182,6 +184,11 @@ void valTypesFromMVTs(const ArrayRef<MVT> &In,
 std::unique_ptr<wasm::WasmSignature>
 signatureFromMVTs(const SmallVectorImpl<MVT> &Results,
                   const SmallVectorImpl<MVT> &Params);
+
+std::unique_ptr<wasm::WasmSignature>
+signatureFromFunctionType(const Module &M, const FunctionType *Ty,
+                          const Function *TargetFunc,
+                          const Function &ContextFunc, const TargetMachine &TM);
 
 namespace yaml {
 

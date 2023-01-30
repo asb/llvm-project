@@ -67,8 +67,6 @@ MVT WebAssembly::parseMVT(StringRef Type) {
       .Case("v8i16", MVT::v8i16)
       .Case("v4i32", MVT::v4i32)
       .Case("v2i64", MVT::v2i64)
-      .Case("funcref", MVT::funcref)
-      .Case("externref", MVT::externref)
       .Default(MVT::INVALID_SIMPLE_VALUE_TYPE);
 }
 
@@ -94,6 +92,8 @@ const char *WebAssembly::anyTypeToString(unsigned Type) {
     return "func";
   case wasm::WASM_TYPE_NORESULT:
     return "void";
+  case wasm::WASM_TYPE_WASMREF:
+    report_fatal_error("Can't convert wasmref to string");
   default:
     return "invalid_type";
   }
@@ -139,10 +139,8 @@ wasm::ValType WebAssembly::toValType(MVT Type) {
   case MVT::v4f32:
   case MVT::v2f64:
     return wasm::ValType::V128;
-  case MVT::funcref:
-    return wasm::ValType::FUNCREF;
-  case MVT::externref:
-    return wasm::ValType::EXTERNREF;
+  case MVT::wasmref:
+    return wasm::ValType::WASMREF;
   default:
     llvm_unreachable("unexpected type");
   }
@@ -160,10 +158,8 @@ wasm::ValType WebAssembly::regClassToValType(unsigned RC) {
     return wasm::ValType::F64;
   case WebAssembly::V128RegClassID:
     return wasm::ValType::V128;
-  case WebAssembly::FUNCREFRegClassID:
-    return wasm::ValType::FUNCREF;
-  case WebAssembly::EXTERNREFRegClassID:
-    return wasm::ValType::EXTERNREF;
+  case WebAssembly::WASMREFRegClassID:
+    return wasm::ValType::WASMREF;
   default:
     llvm_unreachable("unexpected type");
   }
@@ -191,10 +187,14 @@ void WebAssembly::wasmSymbolSetType(MCSymbolWasm *Sym, const Type *GlobalVT,
       ValTy = wasm::ValType::EXTERNREF;
     else if (WebAssembly::isFuncrefType(ElTy))
       ValTy = wasm::ValType::FUNCREF;
+    else if (WebAssembly::isWasmRefType(ElTy))
+      ValTy = retrieveValTypeForWasmRef(cast<TargetExtType>(ElTy));
     else
       report_fatal_error("unhandled reference type");
   } else if (VTs.size() == 1) {
     ValTy = WebAssembly::toValType(VTs[0]);
+    if (ValTy == wasm::ValType::WASMREF)
+      ValTy = retrieveValTypeForWasmRef(cast<TargetExtType>(GlobalVT));
   } else
     report_fatal_error("Aggregate globals not yet implemented");
 
@@ -205,4 +205,14 @@ void WebAssembly::wasmSymbolSetType(MCSymbolWasm *Sym, const Type *GlobalVT,
     Sym->setType(wasm::WASM_SYMBOL_TYPE_GLOBAL);
     Sym->setGlobalType(wasm::WasmGlobalType{uint8_t(ValTy), /*Mutable=*/true});
   }
+}
+
+wasm::ValType WebAssembly::retrieveValTypeForWasmRef(const TargetExtType *TTy) {
+  StringRef Name = TTy->getName();
+  if (Name == "wasm.externref")
+    return wasm::ValType::EXTERNREF;
+  if (Name == "wasm.funcref")
+    return wasm::ValType::FUNCREF;
+
+  report_fatal_error("Unable to determine wasm::ValType for given wasmref");
 }

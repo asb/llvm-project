@@ -120,6 +120,55 @@ llvm::signatureFromMVTs(const SmallVectorImpl<MVT> &Results,
   return Sig;
 }
 
+std::unique_ptr<wasm::WasmSignature> llvm::signatureFromFunctionType(
+    const Module &M, const FunctionType *Ty, const Function *TargetFunc,
+    const Function &ContextFunc, const TargetMachine &TM) {
+  SmallVector<MVT, 1> ResultMVTs;
+  SmallVector<MVT, 4> ParamMVTs;
+  computeSignatureVTs(Ty, TargetFunc, ContextFunc, TM, ParamMVTs, ResultMVTs);
+  auto Sig = signatureFromMVTs(ResultMVTs, ParamMVTs);
+
+  // The only case we can currently handle is where the return type is a
+  // wasmref.
+  for (wasm::ValType VTy : Sig->Returns) {
+    if (VTy == wasm::ValType::WASMREF) {
+      if (Sig->Returns.size() > 1)
+        report_fatal_error("Can't lower signature for function with wasmref as "
+                           "part of complex return type");
+      assert(WebAssembly::isWasmRefType(Ty->getReturnType()) &&
+             "Expected wasmref type as return type");
+      // Now retrieve the actual type and modify the signature.
+      Sig->Returns[0] = WebAssembly::retrieveValTypeForWasmRef(
+          cast<TargetExtType>(Ty->getReturnType()));
+    }
+  }
+  // Find the actual type for any wasmref parameters. The simplistic approach
+  // of matching wasmref in the signature to parameter types in the
+  // FunctionType will implicitly reject cases where compound types
+  // including wasmrefs that are passed directly are encountered.
+  int FnTyParamIdx = 0;
+  int NumFnTyParams = Ty->getNumParams();
+  for (unsigned SigParamIdx = 0; SigParamIdx < Sig->Params.size();
+       SigParamIdx++) {
+    wasm::ValType VTy = Sig->Params[SigParamIdx];
+    if (VTy == wasm::ValType::WASMREF) {
+      bool FoundWasmRefParam = false;
+      while (!FoundWasmRefParam) {
+        if (FnTyParamIdx >= NumFnTyParams)
+          report_fatal_error("Can't identify wasmref type in signature");
+        Type *ParamTy = Ty->getParamType(FnTyParamIdx);
+        if (WebAssembly::isWasmRefType(ParamTy)) {
+          FoundWasmRefParam = true;
+          Sig->Params[SigParamIdx] = WebAssembly::retrieveValTypeForWasmRef(
+              cast<TargetExtType>(ParamTy));
+        }
+        FnTyParamIdx++;
+      }
+    }
+  }
+  return Sig;
+}
+
 yaml::WebAssemblyFunctionInfo::WebAssemblyFunctionInfo(
     const llvm::MachineFunction &MF, const llvm::WebAssemblyFunctionInfo &MFI)
     : CFGStackified(MFI.isCFGStackified()) {

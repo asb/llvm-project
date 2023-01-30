@@ -78,8 +78,12 @@ WebAssemblyFrameLowering::getLocalForStackObject(MachineFunction &MF,
   MFI.setObjectOffset(FrameIndex, Local);
   // Allocate WebAssembly locals for each non-aggregate component of the
   // allocation.
-  for (EVT ValueVT : ValueVTs)
-    FuncInfo->addLocal(ValueVT.getSimpleVT());
+  for (EVT ValueVT : ValueVTs) {
+    wasm::ValType WVT = WebAssembly::toValType(ValueVT.getSimpleVT());
+    if (WVT == wasm::ValType::WASMREF)
+      report_fatal_error("Can't allocate local for WASMREF.");
+    FuncInfo->addLocal(WVT);
+  }
   // Abuse object size to record number of WebAssembly locals allocated to
   // this object.
   MFI.setObjectSize(FrameIndex, ValueVTs.size());

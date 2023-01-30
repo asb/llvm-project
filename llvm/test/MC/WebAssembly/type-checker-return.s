@@ -1,6 +1,7 @@
 # RUN: llvm-mc -triple=wasm32 -mattr=+tail-call %s 2>&1
 
-# XFAIL: *
+# This test passes due to the force-disabling of the wasm type checker because
+# of issues with wasmref.
 
 # FIXME: These shouldn't produce an error, as return will implicitly drop any
 # superfluous values.

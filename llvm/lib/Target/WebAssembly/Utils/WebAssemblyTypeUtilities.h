@@ -37,6 +37,7 @@ enum class BlockType : unsigned {
   V128 = unsigned(wasm::ValType::V128),
   Externref = unsigned(wasm::ValType::EXTERNREF),
   Funcref = unsigned(wasm::ValType::FUNCREF),
+  Wasmref = unsigned(wasm::ValType::WASMREF),
   // Multivalue blocks (and other non-void blocks) are only emitted when the
   // blocks will never be exited and are at the ends of functions (see
   // WebAssemblyCFGStackify::fixEndsAtEndOfFunction). They also are never made
@@ -78,13 +79,20 @@ inline bool isExternrefType(const Type *Ty) {
          Ty->getPointerAddressSpace() ==
              WasmAddressSpace::WASM_ADDRESS_SPACE_EXTERNREF;
 }
+inline bool isWasmRefType(const Type *Ty) {
+  return isa<TargetExtType>(Ty) &&
+         cast<TargetExtType>(Ty)->getName().startswith("wasm.");
+}
 inline bool isRefType(const Type *Ty) {
-  return isFuncrefType(Ty) || isExternrefType(Ty);
+  return isFuncrefType(Ty) || isExternrefType(Ty) || isWasmRefType(Ty);
 }
 
 inline bool isRefType(wasm::ValType Type) {
-  return Type == wasm::ValType::EXTERNREF || Type == wasm::ValType::FUNCREF;
+  return Type == wasm::ValType::EXTERNREF || Type == wasm::ValType::FUNCREF ||
+         Type == wasm::ValType::WASMREF;
 }
+
+wasm::ValType retrieveValTypeForWasmRef(const TargetExtType *TTy);
 
 // Convert StringRef to ValType / HealType / BlockType
 

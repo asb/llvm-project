@@ -1,10 +1,10 @@
 ; RUN: llc --mtriple=wasm32-unknown-unknown -asm-verbose=false -mattr=+reference-types < %s | FileCheck %s
 
-%externref = type ptr addrspace(10) ;; addrspace 10 is nonintegral
+%externref = type target("wasm.externref")
 
 @externref_table = local_unnamed_addr addrspace(1) global [0 x %externref] undef
 
-declare void @llvm.wasm.table.set.externref(ptr addrspace(1), i32, %externref) nounwind
+declare void @llvm.wasm.table.set.wasmref.twasm.externreft(ptr addrspace(1), i32, %externref) nounwind
 
 define void @set_externref_table(%externref %g, i32 %i) {
 ; CHECK-LABEL: set_externref_table:
@@ -15,7 +15,7 @@ define void @set_externref_table(%externref %g, i32 %i) {
 ; CHECK-NEXT: end_function
 
 ;; this generates a table.set of @externref_table
-  call void @llvm.wasm.table.set.externref(ptr addrspace(1) @externref_table, i32 %i, %externref %g)
+  call void @llvm.wasm.table.set.wasmref.twasm.externreft(ptr addrspace(1) @externref_table, i32 %i, %externref %g)
   ret void
 }
 
@@ -26,7 +26,7 @@ define void @set_externref_table_const(%externref %g) {
 ; CHECK-NEXT:  local.get      0
 ; CHECK-NEXT:  table.set      externref_table
 ; CHECK-NEXT:  end_function
-  call void @llvm.wasm.table.set.externref(ptr addrspace(1) @externref_table, i32 0, %externref %g)
+  call void @llvm.wasm.table.set.wasmref.twasm.externreft(ptr addrspace(1) @externref_table, i32 0, %externref %g)
   ret void
 }
 
@@ -40,7 +40,7 @@ define void @set_externref_table_with_offset(%externref %g, i32 %i) {
 ; CHECK-NEXT:  table.set       externref_table
 ; CHECK-NEXT:  end_function
   %off = add nsw i32 %i, 2
-  call void @llvm.wasm.table.set.externref(ptr addrspace(1) @externref_table, i32 %off, %externref %g)
+  call void @llvm.wasm.table.set.wasmref.twasm.externreft(ptr addrspace(1) @externref_table, i32 %off, %externref %g)
   ret void
 }
 
@@ -54,7 +54,7 @@ define void @set_externref_table_with_var_offset(%externref %g, i32 %i, i32 %j) 
 ; CHECK-NEXT:  table.set       externref_table
 ; CHECK-NEXT:  end_function
   %off = add nsw i32 %i, %j
-  call void @llvm.wasm.table.set.externref(ptr addrspace(1) @externref_table, i32 %off, %externref %g)
+  call void @llvm.wasm.table.set.wasmref.twasm.externreft(ptr addrspace(1) @externref_table, i32 %off, %externref %g)
   ret void
 }
 
@@ -71,7 +71,7 @@ define void @set_externref_table_with_var_offset2(%externref %g, i32 %i) {
 ; CHECK-NEXT:  end_function
   %j = call i32 @set_offset()
   %off = add nsw i32 %i, %j
-  call void @llvm.wasm.table.set.externref(ptr addrspace(1) @externref_table, i32 %off, %externref %g)
+  call void @llvm.wasm.table.set.wasmref.twasm.externreft(ptr addrspace(1) @externref_table, i32 %off, %externref %g)
   ret void
 }
 
@@ -85,7 +85,7 @@ define void @set_externref_table_with_id_from_call(%externref %g) {
 ; CHECK-NEXT:  table.set       externref_table
 ; CHECK-NEXT:  end_function
   %id = call i32 @get_table_slot()
-  call void @llvm.wasm.table.set.externref(ptr addrspace(1) @externref_table, i32 %id, %externref %g)
+  call void @llvm.wasm.table.set.wasmref.twasm.externreft(ptr addrspace(1) @externref_table, i32 %id, %externref %g)
   ret void
 }
 

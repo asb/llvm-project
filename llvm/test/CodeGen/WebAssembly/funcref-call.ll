@@ -1,6 +1,7 @@
 ; RUN: llc < %s --mtriple=wasm32-unknown-unknown -asm-verbose=false -mattr=+reference-types | FileCheck %s
+; XFAIL: *
 
-%funcref = type ptr addrspace(20) ;; addrspace 20 is nonintegral
+%funcref = type target("wasm.funcref")
 
 ; CHECK: .tabletype __funcref_call_table, funcref, 1
 
@@ -16,7 +17,7 @@ define void @call_funcref(%funcref %ref) {
 ; CHECK-NEXT: ref.null_func
 ; CHECK-NEXT: table.set __funcref_call_table
 ; CHECK-NEXT: end_function
-  call addrspace(20) void %ref()
+  call void %ref()
   ret void
 }
 

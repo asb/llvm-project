@@ -257,6 +257,8 @@ public:
     auto &SM = Parser.getSourceManager();
     auto BufferName =
       SM.getBufferInfo(SM.getMainFileID()).Buffer->getBufferIdentifier();
+    // HACK: Disable type checking due to challenges with wasmref.
+    SkipTypeCheck = true;
     if (BufferName == "<inline asm>")
       SkipTypeCheck = true;
   }

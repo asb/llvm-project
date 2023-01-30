@@ -854,6 +854,10 @@ static TargetTypeInfo getTargetTypeInfo(const TargetExtType *Ty) {
     return TargetTypeInfo(Type::getInt8PtrTy(C, 0), TargetExtType::HasZeroInit,
                           TargetExtType::CanBeGlobal);
   }
+  if (Name.startswith("wasm.")) {
+    return TargetTypeInfo(Type::getInt8PtrTy(C, 0), TargetExtType::HasZeroInit,
+                          TargetExtType::CanBeGlobal);
+  }
   return TargetTypeInfo(Type::getVoidTy(C));
 }
 

@@ -211,6 +211,8 @@ Type *EVT::getTypeForEVT(LLVMContext &Context) const {
   case MVT::funcref:
     // pointer to i8 addrspace(20)
     return PointerType::get(Type::getInt8Ty(Context), 20);
+  case MVT::wasmref:
+    return TargetExtType::get(Context, "wasm.unknown", {}, {});
   case MVT::v1i1:
     return FixedVectorType::get(Type::getInt1Ty(Context), 1);
   case MVT::v2i1:
@@ -586,6 +588,14 @@ MVT MVT::getVT(Type *Ty, bool HandleUnknown){
     return getVectorVT(
       getVT(VTy->getElementType(), /*HandleUnknown=*/ false),
             VTy->getElementCount());
+  }
+  case Type::TargetExtTyID: {
+    auto *TTy = cast<TargetExtType>(Ty);
+    if (TTy->getName().startswith("wasm."))
+      return MVT(MVT::wasmref);
+    if (HandleUnknown)
+      return MVT(MVT::Other);
+    llvm_unreachable("Unknown type!");
   }
   }
 }

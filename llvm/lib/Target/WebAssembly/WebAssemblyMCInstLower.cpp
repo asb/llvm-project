@@ -69,11 +69,9 @@ WebAssemblyMCInstLower::GetGlobalAddressSymbol(const MachineOperand &MO) const {
   const TargetMachine &TM = MF.getTarget();
   const Function &CurrentFunc = MF.getFunction();
 
-  SmallVector<MVT, 1> ResultMVTs;
-  SmallVector<MVT, 4> ParamMVTs;
   const auto *const F = dyn_cast<Function>(Global);
-  computeSignatureVTs(FuncTy, F, CurrentFunc, TM, ParamMVTs, ResultMVTs);
-  auto Signature = signatureFromMVTs(ResultMVTs, ParamMVTs);
+  auto Signature =
+      signatureFromFunctionType(*F->getParent(), FuncTy, F, CurrentFunc, TM);
 
   bool InvokeDetected = false;
   auto *WasmSym = Printer.getMCSymbolForFunction(

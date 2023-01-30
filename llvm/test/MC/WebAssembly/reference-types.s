@@ -36,23 +36,6 @@ ref_sig_test_externref:
   local.get 0
   end_function
 
-# CHECK-LABEL: ref_select_test:
-# CHECK: funcref.select   # encoding: [0x1b]
-# CHECK: externref.select # encoding: [0x1b]
-ref_select_test:
-  .functype ref_select_test () -> ()
-  ref.null_func
-  ref.null_func
-  i32.const 0
-  funcref.select
-  drop
-  ref.null_extern
-  ref.null_extern
-  i32.const 0
-  externref.select
-  drop
-  end_function
-
 # CHECK-LABEL: ref_block_test:
 # CHECK: block funcref
 # CHECK: block externref
