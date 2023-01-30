@@ -139,6 +139,11 @@ bool WebAssemblyRegColoring::runOnMachineFunction(MachineFunction &MF) {
     size_t Color = I;
     const TargetRegisterClass *RC = MRI->getRegClass(Old);
 
+    // Conservatively, avoid reusing wasmref registers (as their associated
+    // metadata might give different wasm::ValTypes).
+    if (RC == &WebAssembly::WASMREFRegClass)
+      continue;
+
     // Check if it's possible to reuse any of the used colors.
     if (!MRI->isLiveIn(Old))
       for (unsigned C : UsedColors.set_bits()) {
