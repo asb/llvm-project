@@ -20763,9 +20763,19 @@ void RISCVTargetLowering::LowerAsmOperandForConstraint(
   TargetLowering::LowerAsmOperandForConstraint(Op, Constraint, Ops, DAG);
 }
 
+bool RISCVTargetLowering::shouldInsertFencesForAtomic(
+    const Instruction *I) const {
+  return isa<LoadInst>(I) || isa<StoreInst>(I) ||
+         (Subtarget.hasStdExtZacas() && isa<AtomicCmpXchgInst>(I));
+}
+
 Instruction *RISCVTargetLowering::emitLeadingFence(IRBuilderBase &Builder,
                                                    Instruction *Inst,
                                                    AtomicOrdering Ord) const {
+  if (Subtarget.hasStdExtZacas() && isa<AtomicCmpXchgInst>(Inst) &&
+      Ord == AtomicOrdering::SequentiallyConsistent)
+    return Builder.CreateFence(Ord);
+
   if (Subtarget.hasStdExtZtso()) {
     if (isa<LoadInst>(Inst) && Ord == AtomicOrdering::SequentiallyConsistent)
       return Builder.CreateFence(Ord);
