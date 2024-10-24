@@ -171,6 +171,7 @@ Changes to the RISC-V Backend
 * Added `Smctr` and `Ssctr` extensions.
 * `-mcpu=syntacore-scr7` was added.
 * The `Zacas` extension is no longer marked as experimental.
+* The RVA23U64 profile is no longer marked as experimental.
 
 Changes to the WebAssembly Backend
 ----------------------------------
